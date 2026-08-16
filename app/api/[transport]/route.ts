@@ -89,7 +89,7 @@ async function fetchImage(url: string): Promise<ImagePart> {
 
 /** ساخت نشانی Pollinations با پارامتر و کلید اختیاری */
 function pollinationsUrl(path: string, params: Record<string, string | number | undefined>) {
-  const url = new URL(`https://gen.pollinations.ai${path}`)
+  const url = new URL("https://gen.pollinations.ai" + path)
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== "") url.searchParams.set(key, String(value))
   }
@@ -102,7 +102,7 @@ function pollinationsUrl(path: string, params: Record<string, string | number | 
 function pollinationsModelsUrl() {
   const base = "https://gen.pollinations.ai/models"
   const apiKey = process.env.POLLINATIONS_API_KEY
-  return apiKey ? `${base}?key=${apiKey}` : base
+  return apiKey ? base + "?key=" + apiKey : base
 }
 
 const mcp = createMcpHandler(
@@ -271,7 +271,7 @@ const mcp = createMcpHandler(
         },
       },
       async (args) => {
-        const url = pollinationsUrl(`/image/${encodeURIComponent(args.prompt)}`, {
+        const url = pollinationsUrl("/image/" + encodeURIComponent(args.prompt), {
           width: args.width ?? 1024,
           height: args.height ?? 1024,
           model: args.model,
@@ -280,7 +280,7 @@ const mcp = createMcpHandler(
         })
         try {
           const res = await fetch(url)
-          if (!res.ok) throw new Error(`Pollinations HTTP ${res.status}`)
+          if (!res.ok) throw new Error("Pollinations HTTP " + res.status)
           const buffer = Buffer.from(await res.arrayBuffer())
           const mimeType = res.headers.get("content-type")?.split(";")[0] ?? "image/jpeg"
           return {
@@ -325,7 +325,7 @@ const mcp = createMcpHandler(
         },
       },
       async (args) => {
-        const url = pollinationsUrl(`/video/${encodeURIComponent(args.prompt)}`, {
+        const url = pollinationsUrl("/video/" + encodeURIComponent(args.prompt), {
           model: args.model,
           aspectRatio: args.aspectRatio,
         })
@@ -353,7 +353,7 @@ const mcp = createMcpHandler(
       async () => {
         try {
           const res = await fetch(pollinationsModelsUrl())
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          if (!res.ok) throw new Error("HTTP " + res.status)
           const text = await res.text()
           return { content: [{ type: "text" as const, text: text.slice(0, 6000) }] }
         } catch (error) {

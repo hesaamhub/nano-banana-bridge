@@ -87,6 +87,17 @@ async function fetchImage(url: string): Promise<ImagePart> {
   return { data: buffer.toString("base64"), mimeType }
 }
 
+/** ساخت نشانی Pollinations با پارامتر و کلید اختیاری */
+function pollinationsUrl(path: string, params: Record<string, string | number | undefined>) {
+  const url = new URL(`https://gen.pollinations.ai${path}`)
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") url.searchParams.set(key, String(value))
+  }
+  const apiKey = process.env.POLLINATIONS_API_KEY
+  if (apiKey) url.searchParams.set("key", apiKey)
+  return url.toString()
+}
+
 const mcp = createMcpHandler(
   (server) => {
     server.registerTool(
@@ -211,7 +222,7 @@ const mcp = createMcpHandler(
     server.registerTool(
       "health_check",
       {
-        description: "Report bridge configuration status (API key set, secret protection, available models).",
+        description: "Report bridge configuration status (API keys set, secret protection, available models).",
         inputSchema: {},
       },
       async () => ({
@@ -220,9 +231,11 @@ const mcp = createMcpHandler(
             type: "text" as const,
             text: JSON.stringify(
               {
-                apiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
+                geminiApiKey: Boolean(process.env.GEMINI_API_KEY),
+                pollinationsApiKey: Boolean(process.env.POLLINATIONS_API_KEY),
                 secretProtection: Boolean(process.env.MCP_SECRET),
-                models: MODELS,
+                geminiModels: MODELS,
+                pollinations: "image + video via gen.pollinations.ai (free)",
               },
               null,
               2,
@@ -231,10 +244,135 @@ const mcp = createMcpHandler(
         ],
       }),
     )
+
+    // ───────── Pollinations — تصویر و ویدیوی رایگان ─────────
+
+    server.registerTool(
+      "pollinations_image",
+      {
+        description:
+          "Generate an image for FREE via Pollinations (Flux and other open models). No billing or paid plan needed. Returns base64 image plus a shareable URL.",
+        inputSchema: {
+          prompt: z.string().describe("Detailed image prompt — English gives best results"),
+          width: z.number().int().min(256).max(2048).optional().describe("Output width, default 1024"),
+          height: z.number().int().min(256).max(2048).optional().describe("Output height, default 1024"),
+          model: z
+            .string()
+            .optional()
+            .describe("Live model name from pollinations_models — default flux"),
+          seed: z.number().int().optional(),
+        },
+      },
+      async (args) => {
+        const url = pollinationsUrl(`/image/${encodeURIComponent(args.prompt)}`, {
+          width: args.width ?? 1024,
+          height: args.height ?? 1024,
+          model: args.model,
+          seed: args.seed,
+          nologo: "true",
+        })
+        try {
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(`Pollinations HTTP ${res.status}`)
+          const buffer = Buffer.from(await res.arrayBuffer())
+          const mimeType = res.headers.get("content-type")?.split(";")[0] ?? "image/jpeg"
+          return {
+            content: [
+              { type: "image" as const, data: buffer.toString("base64"), mimeType },
+              {
+                type: "text" as const,
+                text: JSON.stringify({ provider: "pollinations", url, mimeType, bytes: buffer.length }),
+              },
+            ],
+          }
+        } catch (error) {
+          // حتی اگر دانلود شکست خورد، لینک قابل‌استفاده را برگردان
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  provider: "pollinations",
+                  url,
+                  warning: error instanceof Error ? error.message : String(error),
+                }),
+              },
+            ],
+          }
+        }
+      },
+    )
+
+    server.registerTool(
+      "pollinations_video",
+      {
+        description:
+          "Generate a short video for FREE via Pollinations. Returns a URL — the video renders when the URL is opened (can take 1-2 minutes).",
+        inputSchema: {
+          prompt: z.string().describe("Detailed video prompt — English gives best results"),
+          model: z
+            .string()
+            .optional()
+            .describe("Live video model name from pollinations_models"),
+          aspectRatio: z.enum(["16:9", "9:16", "1:1"]).optional(),
+        },
+      },
+      async (args) => {
+        const url = pollinationsUrl(`/video/${encodeURIComponent(args.prompt)}`, {
+          model: args.model,
+          aspectRatio: args.aspectRatio,
+        })
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                provider: "pollinations",
+                videoUrl: url,
+                note: "ویدیو هنگام باز کردن لینک رندر می‌شود — ۱ تا ۲ دقیقه صبر لازم است",
+              }),
+            },
+          ],
+        }
+      },
+    )
+
+    server.registerTool(
+      "pollinations_models",
+      {
+        description: "List the live image and video models available on Pollinations right now.",
+        inputSchema: {},
+      },
+      async () => {
+        try {
+          const res = await fetch(pollinationsModelsUrl())
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const text = await res.text()
+          return { content: [{ type: "text" as const, text: text.slice(0, 6000) }] }
+        } catch (error) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text" as const,
+                text: `خطا در خواندن مدل‌ها: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+          }
+        }
+      },
+    )
   },
   {},
   { basePath: "/api", maxDuration: 60 },
 )
+
+/** نشانی رجیستری مدل‌های Pollinations */
+function pollinationsModelsUrl() {
+  const base = "https://gen.pollinations.ai/models"
+  const apiKey = process.env.POLLINATIONS_API_KEY
+  return apiKey ? `${base}?key=${apiKey}` : base
+}
 
 /** محافظت با کلید مخفی در query string — اگر MCP_SECRET ست شده باشد، بدون آن ۴۰۱ می‌دهد */
 function withAuth(handler: typeof mcp) {

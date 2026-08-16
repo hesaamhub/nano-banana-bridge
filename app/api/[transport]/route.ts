@@ -98,6 +98,13 @@ function pollinationsUrl(path: string, params: Record<string, string | number | 
   return url.toString()
 }
 
+/** نشانی رجیستری مدل‌های Pollinations */
+function pollinationsModelsUrl() {
+  const base = "https://gen.pollinations.ai/models"
+  const apiKey = process.env.POLLINATIONS_API_KEY
+  return apiKey ? `${base}?key=${apiKey}` : base
+}
+
 const mcp = createMcpHandler(
   (server) => {
     server.registerTool(
@@ -366,13 +373,6 @@ const mcp = createMcpHandler(
   {},
   { basePath: "/api", maxDuration: 60 },
 )
-
-/** نشانی رجیستری مدل‌های Pollinations */
-function pollinationsModelsUrl() {
-  const base = "https://gen.pollinations.ai/models"
-  const apiKey = process.env.POLLINATIONS_API_KEY
-  return apiKey ? `${base}?key=${apiKey}` : base
-}
 
 /** محافظت با کلید مخفی در query string — اگر MCP_SECRET ست شده باشد، بدون آن ۴۰۱ می‌دهد */
 function withAuth(handler: typeof mcp) {
